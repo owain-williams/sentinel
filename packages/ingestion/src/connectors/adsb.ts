@@ -50,7 +50,14 @@ export class AdsbConnector implements Connector {
   }
 
   async connect(): Promise<void> {
-    await this.poll();
+    await this.poll().catch((err) => console.warn(`[adsb] Initial poll failed:`, err));
+    // Poll every 10 minutes
+    this.pollTimer = setInterval(
+      () => {
+        void this.poll().catch((err) => console.warn(`[adsb] Poll failed:`, err));
+      },
+      10 * 60 * 1000,
+    );
   }
 
   async disconnect(): Promise<void> {

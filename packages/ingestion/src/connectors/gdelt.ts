@@ -63,7 +63,15 @@ export class GdeltConnector implements Connector {
   }
 
   async connect(): Promise<void> {
-    await this.poll();
+    // Initial poll — don't let failure prevent the connector from starting
+    await this.poll().catch((err) => console.warn(`[gdelt] Initial poll failed:`, err));
+    // Poll every 15 minutes
+    this.pollTimer = setInterval(
+      () => {
+        void this.poll().catch((err) => console.warn(`[gdelt] Poll failed:`, err));
+      },
+      15 * 60 * 1000,
+    );
   }
 
   async disconnect(): Promise<void> {

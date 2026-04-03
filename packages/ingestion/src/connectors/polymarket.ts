@@ -45,7 +45,15 @@ export class PolymarketConnector implements Connector {
   }
 
   async connect(): Promise<void> {
-    await this.poll();
+    // Initial poll — don't let failure prevent the connector from starting
+    await this.poll().catch((err) => console.warn(`[polymarket] Initial poll failed:`, err));
+    // Poll every 5 minutes
+    this.pollTimer = setInterval(
+      () => {
+        void this.poll().catch((err) => console.warn(`[polymarket] Poll failed:`, err));
+      },
+      5 * 60 * 1000,
+    );
   }
 
   async disconnect(): Promise<void> {

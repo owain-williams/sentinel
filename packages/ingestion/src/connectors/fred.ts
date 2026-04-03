@@ -44,7 +44,14 @@ export class FredConnector implements Connector {
   }
 
   async connect(): Promise<void> {
-    await this.poll();
+    await this.poll().catch((err) => console.warn(`[fred] Initial poll failed:`, err));
+    // Poll every 6 hours (macro data updates infrequently)
+    this.pollTimer = setInterval(
+      () => {
+        void this.poll().catch((err) => console.warn(`[fred] Poll failed:`, err));
+      },
+      6 * 60 * 60 * 1000,
+    );
   }
 
   async disconnect(): Promise<void> {

@@ -62,7 +62,14 @@ export class FinnhubRestConnector implements Connector {
   }
 
   async connect(): Promise<void> {
-    await this.poll();
+    await this.poll().catch((err) => console.warn(`[finnhub-rest] Initial poll failed:`, err));
+    // Poll every 5 minutes
+    this.pollTimer = setInterval(
+      () => {
+        void this.poll().catch((err) => console.warn(`[finnhub-rest] Poll failed:`, err));
+      },
+      5 * 60 * 1000,
+    );
   }
 
   async disconnect(): Promise<void> {

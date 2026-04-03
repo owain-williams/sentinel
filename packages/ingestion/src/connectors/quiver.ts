@@ -55,7 +55,14 @@ export class QuiverConnector implements Connector {
   }
 
   async connect(): Promise<void> {
-    await this.poll();
+    await this.poll().catch((err) => console.warn(`[quiver] Initial poll failed:`, err));
+    // Poll every 30 minutes
+    this.pollTimer = setInterval(
+      () => {
+        void this.poll().catch((err) => console.warn(`[quiver] Poll failed:`, err));
+      },
+      30 * 60 * 1000,
+    );
   }
 
   async disconnect(): Promise<void> {
