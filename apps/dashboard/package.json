@@ -1,0 +1,25 @@
+{
+  "name": "@sentinel/dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.3",
+    "@sentinel/shared": "workspace:*",
+    "hono": "^4.7.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.6",
+    "vite-plus": "catalog:"
+  }
+}

@@ -1,0 +1,29 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+
+catalog:
+  "@types/better-sqlite3": ^7.6.13
+  "@types/node": ^24
+  better-sqlite3: ^12.8.0
+  drizzle-kit: ^0.31.10
+  drizzle-orm: ^0.45.2
+  ioredis: ^5.10.1
+  msw: ^2.12.14
+  typescript: ^5
+  vite: npm:@voidzero-dev/vite-plus-core@latest
+  vite-plus: latest
+  vitest: npm:@voidzero-dev/vite-plus-test@latest
+
+catalogMode: prefer
+overrides:
+  vite: "catalog:"
+  vitest: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: "*"
+    vitest: "*"

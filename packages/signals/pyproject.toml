@@ -1,0 +1,12 @@
+[project]
+name = "sentinel-signals"
+version = "0.0.0"
+description = "Sentinel signal processing — anomaly detection and correlation"
+requires-python = ">=3.11"
+dependencies = ["redis>=5.0.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

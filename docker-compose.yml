@@ -1,0 +1,67 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: packages/ingestion/Dockerfile
+    depends_on:
+      - redis
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+
+  signals:
+    build:
+      context: .
+      dockerfile: packages/signals/Dockerfile
+    depends_on:
+      - redis
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+
+  engine:
+    build:
+      context: .
+      dockerfile: packages/engine/Dockerfile
+    depends_on:
+      - redis
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_PATH: /data/sentinel.db
+    volumes:
+      - sentinel-data:/data
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    depends_on:
+      - redis
+      - engine
+    ports:
+      - "3001:3001"
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_PATH: /data/sentinel.db
+      PORT: "3001"
+    volumes:
+      - sentinel-data:/data
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  sentinel-data:
