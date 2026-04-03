@@ -15,4 +15,4 @@ COPY packages/engine/ packages/engine/
 
 RUN mkdir -p /data
 
-CMD ["pnpm", "exec", "tsx", "packages/engine/src/runner.ts"]
+CMD ["./packages/engine/node_modules/.bin/tsx", "packages/engine/src/runner.ts"]

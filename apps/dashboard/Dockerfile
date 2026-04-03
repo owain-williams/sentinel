@@ -26,4 +26,4 @@ RUN mkdir -p /data
 ENV DIST_DIR=/app/apps/dashboard/dist
 
 EXPOSE 3001
-CMD ["pnpm", "exec", "tsx", "apps/dashboard/src/server.ts"]
+CMD ["./apps/dashboard/node_modules/.bin/tsx", "apps/dashboard/src/server.ts"]

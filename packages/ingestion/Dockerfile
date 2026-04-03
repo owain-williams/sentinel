@@ -19,4 +19,4 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared/ packages/shared/
 COPY packages/ingestion/ packages/ingestion/
 
-CMD ["pnpm", "exec", "tsx", "packages/ingestion/src/runner.ts"]
+CMD ["./packages/ingestion/node_modules/.bin/tsx", "packages/ingestion/src/runner.ts"]
