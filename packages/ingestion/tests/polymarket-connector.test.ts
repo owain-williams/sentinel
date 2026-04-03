@@ -42,7 +42,7 @@ function makeMarkets() {
 
 const handlers = [
   http.get(`${POLY_BASE}/markets`, () => {
-    return HttpResponse.json(makeMarkets());
+    return HttpResponse.json({ data: makeMarkets() });
   }),
 ];
 
@@ -97,18 +97,20 @@ describe("PolymarketConnector", () => {
     // Second poll — price changed
     server.use(
       http.get(`${POLY_BASE}/markets`, () => {
-        return HttpResponse.json([
-          {
-            condition_id: "0x123",
-            question: "Will there be a US government shutdown in 2026?",
-            tokens: [
-              { token_id: "tok-yes", outcome: "Yes", price: 0.55 },
-              { token_id: "tok-no", outcome: "No", price: 0.45 },
-            ],
-            volume: 600000,
-            active: true,
-          },
-        ]);
+        return HttpResponse.json({
+          data: [
+            {
+              condition_id: "0x123",
+              question: "Will there be a US government shutdown in 2026?",
+              tokens: [
+                { token_id: "tok-yes", outcome: "Yes", price: 0.55 },
+                { token_id: "tok-no", outcome: "No", price: 0.45 },
+              ],
+              volume: 600000,
+              active: true,
+            },
+          ],
+        });
       }),
     );
 
@@ -124,15 +126,17 @@ describe("PolymarketConnector", () => {
   test("skips inactive markets", async () => {
     server.use(
       http.get(`${POLY_BASE}/markets`, () => {
-        return HttpResponse.json([
-          {
-            condition_id: "0x999",
-            question: "Resolved market",
-            tokens: [{ token_id: "t1", outcome: "Yes", price: 1.0 }],
-            volume: 100000,
-            active: false,
-          },
-        ]);
+        return HttpResponse.json({
+          data: [
+            {
+              condition_id: "0x999",
+              question: "Resolved market",
+              tokens: [{ token_id: "t1", outcome: "Yes", price: 1.0 }],
+              volume: 100000,
+              active: false,
+            },
+          ],
+        });
       }),
     );
 

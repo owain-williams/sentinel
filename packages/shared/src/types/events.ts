@@ -44,7 +44,7 @@ const EventCategorySchema = z.enum([
 
 export const NormalisedEventSchema = z.object({
   id: z.string().uuid(),
-  timestamp: z.string().datetime(),
+  timestamp: z.string().datetime({ offset: true }),
   source: DataSourceSchema,
   category: EventCategorySchema,
   subcategory: z.string().optional(),
@@ -72,7 +72,7 @@ const SignalUrgency = z.enum(["IMMEDIATE", "HOURS", "DAYS"]);
 
 export const SignalEventSchema = z.object({
   id: z.string(),
-  timestamp: z.string().datetime(),
+  timestamp: z.string().datetime({ offset: true }),
   event_type: z.string(),
   confidence: z.number().min(0).max(1),
   direction: SignalDirection,
