@@ -18,8 +18,8 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared/ packages/shared/
 COPY apps/dashboard/ apps/dashboard/
 
-# Build the React SPA (vite is provided by vite-plus)
-RUN cd apps/dashboard && pnpm exec vite build
+# Build the React SPA
+RUN pnpm exec vp build apps/dashboard
 
 RUN mkdir -p /data
 
