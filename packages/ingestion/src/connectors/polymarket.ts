@@ -77,7 +77,8 @@ export class PolymarketConnector implements Connector {
     const response = await fetch(`${POLY_BASE}/markets`);
     if (!response.ok) return;
 
-    const markets = (await response.json()) as PolymarketMarket[];
+    const body = (await response.json()) as { data?: PolymarketMarket[] };
+    const markets = body.data ?? [];
 
     for (const market of markets) {
       if (!market.active) continue;
