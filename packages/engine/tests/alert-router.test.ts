@@ -6,7 +6,8 @@ function makeSignal(overrides: Partial<SignalEvent> = {}): SignalEvent {
   return {
     id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     timestamp: "2026-04-03T14:00:00.000Z",
-    event_type: "anomaly_zscore",
+    // Use unique event_type per test to avoid rate limiter interference
+    event_type: `test_${Math.random()}`,
     confidence: 0.5,
     direction: "VOLATILITY",
     urgency: "HOURS",
@@ -18,41 +19,52 @@ function makeSignal(overrides: Partial<SignalEvent> = {}): SignalEvent {
 }
 
 describe("classifySignal", () => {
-  test("critical: high confidence + immediate urgency", () => {
-    const result = classifySignal(makeSignal({ confidence: 0.9, urgency: "IMMEDIATE" }));
+  test("critical: high confidence + immediate + multiple events", () => {
+    const result = classifySignal(
+      makeSignal({
+        confidence: 0.9,
+        urgency: "IMMEDIATE",
+        contributing_event_ids: ["evt-1", "evt-2"],
+      }),
+    );
     expect(result.priority).toBe(AlertPriority.CRITICAL);
     expect(result.channels).toContain("telegram");
     expect(result.channels).toContain("dashboard");
   });
 
-  test("high: moderate confidence + hours urgency", () => {
-    const result = classifySignal(makeSignal({ confidence: 0.7, urgency: "HOURS" }));
+  test("high: strong confidence + immediate urgency", () => {
+    const result = classifySignal(makeSignal({ confidence: 0.85, urgency: "IMMEDIATE" }));
     expect(result.priority).toBe(AlertPriority.HIGH);
     expect(result.channels).toContain("telegram");
     expect(result.channels).toContain("dashboard");
   });
 
-  test("medium: moderate confidence below high threshold", () => {
-    const result = classifySignal(makeSignal({ confidence: 0.5 }));
+  test("medium: moderate confidence goes to dashboard only", () => {
+    const result = classifySignal(makeSignal({ confidence: 0.7, urgency: "HOURS" }));
     expect(result.priority).toBe(AlertPriority.MEDIUM);
     expect(result.channels).toContain("dashboard");
     expect(result.channels).not.toContain("telegram");
   });
 
-  test("low: low confidence", () => {
+  test("low: weak confidence gets no channels", () => {
     const result = classifySignal(makeSignal({ confidence: 0.3 }));
     expect(result.priority).toBe(AlertPriority.LOW);
     expect(result.channels).toHaveLength(0);
   });
 
-  test("boundary: exactly 0.8 confidence + IMMEDIATE is critical", () => {
-    const result = classifySignal(makeSignal({ confidence: 0.8, urgency: "IMMEDIATE" }));
-    // > 0.8 required, so 0.8 exactly should NOT be critical
-    expect(result.priority).not.toBe(AlertPriority.CRITICAL);
+  test("boundary: 0.85 confidence + IMMEDIATE but single event is HIGH not CRITICAL", () => {
+    const result = classifySignal(
+      makeSignal({
+        confidence: 0.86,
+        urgency: "IMMEDIATE",
+        contributing_event_ids: ["evt-1"],
+      }),
+    );
+    expect(result.priority).toBe(AlertPriority.HIGH);
   });
 
-  test("boundary: exactly 0.4 confidence is low", () => {
-    const result = classifySignal(makeSignal({ confidence: 0.4 }));
+  test("boundary: exactly 0.6 confidence is low", () => {
+    const result = classifySignal(makeSignal({ confidence: 0.6 }));
     expect(result.priority).toBe(AlertPriority.LOW);
   });
 });
