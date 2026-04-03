@@ -34,9 +34,10 @@ const executor = createExecutor({
   openPositionCount: () => tradeService.listOpenTrades().length,
 });
 
-// Alert worker — consumes signals from Redis, sends Telegram notifications
+// Alert worker — consumes signals from Redis, persists to DB, sends Telegram
 const alertWorker = new AlertWorker({
   redisUrl: REDIS_URL,
+  db,
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
     chatId: process.env.TELEGRAM_CHAT_ID ?? "",
