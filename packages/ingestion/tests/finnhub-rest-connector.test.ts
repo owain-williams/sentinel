@@ -15,56 +15,37 @@ const STREAM_KEY = "test:finnhub:events";
 const GROUP = "test-finnhub-group";
 const CONSUMER = "test-finnhub-consumer";
 
-function makeOptionChain(totalVolume: number, putVolume: number, callVolume: number) {
+function makeQuote(price: number, prevClose: number) {
   return {
-    data: [
-      {
-        expirationDate: "2026-04-18",
-        options: {
-          CALL: [
-            {
-              strike: 150,
-              volume: callVolume,
-              openInterest: 5000,
-              impliedVolatility: 0.35,
-              lastPrice: 5.2,
-            },
-          ],
-          PUT: [
-            {
-              strike: 140,
-              volume: putVolume,
-              openInterest: 3000,
-              impliedVolatility: 0.4,
-              lastPrice: 3.1,
-            },
-          ],
-        },
-      },
-    ],
+    c: price,
+    d: price - prevClose,
+    dp: ((price - prevClose) / prevClose) * 100,
+    h: price * 1.01,
+    l: price * 0.99,
+    o: prevClose,
+    pc: prevClose,
+    t: Math.floor(Date.now() / 1000),
   };
 }
 
-function makeCandles(volumes: number[]) {
+function makeCandles(count: number) {
   return {
-    c: volumes.map(() => 150),
-    h: volumes.map(() => 152),
-    l: volumes.map(() => 148),
-    o: volumes.map(() => 149),
-    v: volumes,
-    t: volumes.map((_, i) => Math.floor(Date.now() / 1000) - (volumes.length - i) * 86400),
+    c: Array.from({ length: count }, (_, i) => 148 + i * 0.1),
+    h: Array.from({ length: count }, (_, i) => 150 + i * 0.1),
+    l: Array.from({ length: count }, (_, i) => 146 + i * 0.1),
+    o: Array.from({ length: count }, (_, i) => 147 + i * 0.1),
+    v: Array.from({ length: count }, () => 4500 + Math.round(Math.random() * 1000)),
+    t: Array.from({ length: count }, (_, i) => Math.floor(Date.now() / 1000) - (count - i) * 86400),
     s: "ok",
   };
 }
 
 const handlers = [
-  http.get(`${FINNHUB_BASE}/stock/option/chain`, () => {
-    return HttpResponse.json(makeOptionChain(20000, 8000, 12000));
+  http.get(`${FINNHUB_BASE}/quote`, () => {
+    return HttpResponse.json(makeQuote(152.5, 150.0));
   }),
   http.get(`${FINNHUB_BASE}/stock/candle`, () => {
-    // 20 days of volume data, average ~5000
-    const volumes = Array.from({ length: 20 }, () => 4500 + Math.round(Math.random() * 1000));
-    return HttpResponse.json(makeCandles(volumes));
+    return HttpResponse.json(makeCandles(20));
   }),
 ];
 
@@ -100,12 +81,13 @@ describe("FinnhubRestConnector", () => {
     server.close();
   });
 
-  test("fetches options chain and publishes events", async () => {
+  test("fetches quotes and publishes price + range events", async () => {
     await connector.poll();
 
     const events = await consumeEvents(redis, STREAM_KEY, GROUP, CONSUMER, 20);
 
-    expect(events.length).toBeGreaterThanOrEqual(1);
+    // 1 ticker × 2 event types (price + intraday_range)
+    expect(events.length).toBe(2);
     expect(events.every((e) => e.source === DataSource.FINNHUB)).toBe(true);
     expect(events.every((e) => e.category === EventCategory.OPTIONS_FLOW)).toBe(true);
   });
@@ -117,23 +99,23 @@ describe("FinnhubRestConnector", () => {
     expect(events.every((e) => e.ticker === "AAPL")).toBe(true);
   });
 
-  test("calculates put/call ratio", async () => {
+  test("price event contains quote data", async () => {
     await connector.poll();
     const events = await consumeEvents(redis, STREAM_KEY, GROUP, CONSUMER, 20);
 
-    const pcEvent = events.find((e) => e.subcategory === "put_call_ratio");
-    expect(pcEvent).toBeDefined();
-    // 8000 puts / 12000 calls = 0.667
-    expect(pcEvent!.rawValue).toBeCloseTo(8000 / 12000, 2);
+    const priceEvent = events.find((e) => e.subcategory === "price");
+    expect(priceEvent).toBeDefined();
+    expect(priceEvent!.rawValue).toBe(152.5);
+    expect((priceEvent!.rawPayload as Record<string, unknown>).prevClose).toBe(150.0);
   });
 
-  test("calculates total volume", async () => {
+  test("intraday range event is emitted", async () => {
     await connector.poll();
     const events = await consumeEvents(redis, STREAM_KEY, GROUP, CONSUMER, 20);
 
-    const volEvent = events.find((e) => e.subcategory === "options_volume");
-    expect(volEvent).toBeDefined();
-    expect(volEvent!.rawValue).toBe(20000);
+    const rangeEvent = events.find((e) => e.subcategory === "intraday_range");
+    expect(rangeEvent).toBeDefined();
+    expect(rangeEvent!.rawValue).toBeGreaterThan(0);
   });
 
   test("health check returns true after successful poll", async () => {

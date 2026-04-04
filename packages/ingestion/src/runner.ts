@@ -38,7 +38,10 @@ if (process.env.FRED_API_KEY) {
 }
 
 connectors.push(new GdeltConnector({ redisClient: redis }));
-connectors.push(new PolymarketConnector({ redisClient: redis }));
+
+if (process.env.POLYMARKET_ENABLED === "true") {
+  connectors.push(new PolymarketConnector({ redisClient: redis }));
+}
 
 // Phase 2 connectors
 if (process.env.QUIVER_API_TOKEN) {

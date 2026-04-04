@@ -9,29 +9,25 @@ import type { Connector } from "./types.ts";
 
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
 
-interface OptionEntry {
-  strike: number;
-  volume: number;
-  openInterest: number;
-  impliedVolatility: number;
-  lastPrice: number;
-}
-
-interface OptionChainExpiry {
-  expirationDate: string;
-  options: {
-    CALL: OptionEntry[];
-    PUT: OptionEntry[];
-  };
-}
-
-interface OptionChainResponse {
-  data: OptionChainExpiry[];
+interface QuoteResponse {
+  c: number; // current price
+  d: number; // change
+  dp: number; // percent change
+  h: number; // high
+  l: number; // low
+  o: number; // open
+  pc: number; // previous close
+  t: number; // timestamp
 }
 
 interface CandleResponse {
-  v: number[];
-  s: string;
+  c: number[]; // close
+  h: number[]; // high
+  l: number[]; // low
+  o: number[]; // open
+  v: number[]; // volume
+  t: number[]; // timestamps
+  s: string; // status
 }
 
 export interface FinnhubRestConnectorConfig {
@@ -52,7 +48,8 @@ export class FinnhubRestConnector implements Connector {
   private lastFetchTime: number | null = null;
   private dataHandlers: ((event: NormalisedEvent) => void)[] = [];
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private volumeBaselines: Map<string, number[]> = new Map();
+  private priceHistory: Map<string, number[]> = new Map();
+  private volumeHistory: Map<string, number[]> = new Map();
 
   constructor(config: FinnhubRestConnectorConfig) {
     this.apiKey = config.apiKey;
@@ -62,8 +59,12 @@ export class FinnhubRestConnector implements Connector {
   }
 
   async connect(): Promise<void> {
+    // Seed baselines with 20-day candle history
+    await this.seedBaselines().catch((err) =>
+      console.warn(`[finnhub-rest] Baseline seed failed:`, err),
+    );
     await this.poll().catch((err) => console.warn(`[finnhub-rest] Initial poll failed:`, err));
-    // Poll every 5 minutes
+    // Poll every 5 minutes (free tier: 60 calls/min)
     this.pollTimer = setInterval(
       () => {
         void this.poll().catch((err) => console.warn(`[finnhub-rest] Poll failed:`, err));
@@ -91,129 +92,107 @@ export class FinnhubRestConnector implements Connector {
 
   async poll(): Promise<void> {
     for (const ticker of this.watchlist) {
-      await this.processTickerOptions(ticker);
+      await this.processTicker(ticker);
     }
     this.lastFetchTime = Date.now();
   }
 
-  private async processTickerOptions(ticker: string): Promise<void> {
-    const chain = await this.fetchOptionChain(ticker);
-    if (!chain) return;
+  private async seedBaselines(): Promise<void> {
+    for (const ticker of this.watchlist) {
+      const candles = await this.fetchCandles(ticker);
+      if (!candles) continue;
 
-    let totalCallVolume = 0;
-    let totalPutVolume = 0;
-    let totalIV = 0;
-    let ivCount = 0;
-
-    for (const expiry of chain.data) {
-      for (const call of expiry.options.CALL) {
-        totalCallVolume += call.volume;
-        totalIV += call.impliedVolatility;
-        ivCount++;
-      }
-      for (const put of expiry.options.PUT) {
-        totalPutVolume += put.volume;
-        totalIV += put.impliedVolatility;
-        ivCount++;
-      }
+      this.priceHistory.set(ticker, candles.c.slice());
+      this.volumeHistory.set(ticker, candles.v.slice());
     }
+  }
 
-    const totalVolume = totalCallVolume + totalPutVolume;
-    const putCallRatio = totalCallVolume > 0 ? totalPutVolume / totalCallVolume : 0;
-    const avgIV = ivCount > 0 ? totalIV / ivCount : 0;
+  private async processTicker(ticker: string): Promise<void> {
+    const quote = await this.fetchQuote(ticker);
+    if (!quote || quote.c === 0) return;
 
-    // Update volume baseline
-    const history = this.volumeBaselines.get(ticker) ?? [];
-    const volumeBaseline = await this.fetchVolumeBaseline(ticker, history);
+    // Update price history
+    const prices = this.priceHistory.get(ticker) ?? [];
+    const priceBaseline = this.mean(prices);
+    prices.push(quote.c);
+    if (prices.length > 100) prices.shift();
+    this.priceHistory.set(ticker, prices);
 
-    // Emit options volume event
+    // Emit price change event
     await this.emit({
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       source: DataSource.FINNHUB,
       category: EventCategory.OPTIONS_FLOW,
-      subcategory: "options_volume",
+      subcategory: "price",
       ticker,
-      rawValue: totalVolume,
-      baselineValue: volumeBaseline,
-      zScore: this.calculateZScore(totalVolume, history),
+      rawValue: quote.c,
+      baselineValue: priceBaseline || quote.pc,
+      zScore: this.zScore(quote.c, prices),
       confidence: 0.8,
-      rawPayload: { totalVolume, callVolume: totalCallVolume, putVolume: totalPutVolume },
+      rawPayload: {
+        price: quote.c,
+        change: quote.d,
+        changePct: quote.dp,
+        high: quote.h,
+        low: quote.l,
+        open: quote.o,
+        prevClose: quote.pc,
+      },
     });
 
-    // Emit put/call ratio event
+    // Emit intraday range event (high-low spread as % of price)
+    const rangePct = quote.c > 0 ? ((quote.h - quote.l) / quote.c) * 100 : 0;
     await this.emit({
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       source: DataSource.FINNHUB,
       category: EventCategory.OPTIONS_FLOW,
-      subcategory: "put_call_ratio",
+      subcategory: "intraday_range",
       ticker,
-      rawValue: putCallRatio,
-      baselineValue: 0,
-      confidence: 0.8,
-      rawPayload: { putCallRatio, putVolume: totalPutVolume, callVolume: totalCallVolume },
-    });
-
-    // Emit average IV event
-    await this.emit({
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-      source: DataSource.FINNHUB,
-      category: EventCategory.OPTIONS_FLOW,
-      subcategory: "avg_iv",
-      ticker,
-      rawValue: avgIV,
-      baselineValue: 0,
-      confidence: 0.8,
-      rawPayload: { avgIV },
+      rawValue: rangePct,
+      baselineValue: 1.5, // typical daily range ~1.5%
+      confidence: 0.7,
+      rawPayload: { rangePct, high: quote.h, low: quote.l, price: quote.c },
     });
   }
 
-  private async fetchOptionChain(ticker: string): Promise<OptionChainResponse | null> {
-    const url = new URL(`${FINNHUB_BASE}/stock/option/chain`);
-    url.searchParams.set("symbol", ticker);
-    url.searchParams.set("token", this.apiKey);
-
-    const response = await fetch(url.toString());
-    if (!response.ok) return null;
-
-    return (await response.json()) as OptionChainResponse;
+  private async fetchQuote(ticker: string): Promise<QuoteResponse | null> {
+    return this.fetchJson<QuoteResponse>(
+      `${FINNHUB_BASE}/quote?symbol=${ticker}&token=${this.apiKey}`,
+    );
   }
 
-  private async fetchVolumeBaseline(ticker: string, history: number[]): Promise<number> {
-    if (history.length > 0) {
-      return history.reduce((s, v) => s + v, 0) / history.length;
-    }
-
-    // Fetch historical candle data for baseline
+  private async fetchCandles(ticker: string): Promise<CandleResponse | null> {
     const now = Math.floor(Date.now() / 1000);
     const twentyDaysAgo = now - 20 * 86400;
-    const url = new URL(`${FINNHUB_BASE}/stock/candle`);
-    url.searchParams.set("symbol", ticker);
-    url.searchParams.set("resolution", "D");
-    url.searchParams.set("from", String(twentyDaysAgo));
-    url.searchParams.set("to", String(now));
-    url.searchParams.set("token", this.apiKey);
-
-    const response = await fetch(url.toString());
-    if (!response.ok) return 0;
-
-    const data = (await response.json()) as CandleResponse;
-    if (data.s !== "ok" || !data.v?.length) return 0;
-
-    const volumes = data.v;
-    this.volumeBaselines.set(ticker, volumes);
-    return volumes.reduce((s, v) => s + v, 0) / volumes.length;
+    const data = await this.fetchJson<CandleResponse>(
+      `${FINNHUB_BASE}/stock/candle?symbol=${ticker}&resolution=D&from=${twentyDaysAgo}&to=${now}&token=${this.apiKey}`,
+    );
+    if (!data || data.s !== "ok") return null;
+    return data;
   }
 
-  private calculateZScore(value: number, history: number[]): number | undefined {
+  private async fetchJson<T>(url: string): Promise<T | null> {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) return null;
+    return (await response.json()) as T;
+  }
+
+  private mean(values: number[]): number {
+    if (values.length === 0) return 0;
+    return values.reduce((s, v) => s + v, 0) / values.length;
+  }
+
+  private zScore(value: number, history: number[]): number | undefined {
     if (history.length < 2) return undefined;
-    const mean = history.reduce((s, v) => s + v, 0) / history.length;
-    const variance = history.reduce((s, v) => s + (v - mean) ** 2, 0) / history.length;
+    const m = this.mean(history);
+    const variance = history.reduce((s, v) => s + (v - m) ** 2, 0) / history.length;
     const stdDev = Math.sqrt(variance);
     if (stdDev === 0) return 0;
-    return (value - mean) / stdDev;
+    return (value - m) / stdDev;
   }
 
   private async emit(event: NormalisedEvent): Promise<void> {
