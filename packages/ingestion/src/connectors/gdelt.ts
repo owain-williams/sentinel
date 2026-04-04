@@ -128,10 +128,13 @@ export class GdeltConnector implements Connector {
     url.searchParams.set("mode", "artlist");
     url.searchParams.set("maxrecords", "250");
     url.searchParams.set("format", "json");
-    url.searchParams.set("timespan", "15min");
+    url.searchParams.set("timespan", "15m");
 
     const response = await fetch(url.toString());
     if (!response.ok) return null;
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("json")) return null;
 
     const data = (await response.json()) as GdeltResponse;
     return data.articles?.length ?? 0;
